@@ -1,13 +1,9 @@
 package com.example.meetbluetooth.adapter;
 
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.content.Context;
-import android.content.Intent;
-import android.os.Bundle;
 import android.os.Handler;
-import android.os.Message;
 import android.os.ParcelUuid;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -23,16 +19,10 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.meetbluetooth.Constants;
 import com.example.meetbluetooth.R;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.Reader;
 import java.util.ArrayList;
-import java.util.Timer;
-import java.util.TimerTask;
 import java.util.UUID;
 
 public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.Holder> {
@@ -63,34 +53,11 @@ public class DeviceAdapter extends RecyclerView.Adapter<DeviceAdapter.Holder> {
                 try {
                     ParcelUuid[] uuids = bluetoothDevice.getUuids();
                     final BluetoothSocket bluetoothSocket = bluetoothDevice.createRfcommSocketToServiceRecord(UUID.fromString(Constants.UUID));
-                    Toast.makeText(context, uuids[0].getUuid().toString(), Toast.LENGTH_SHORT).show();
                     bluetoothSocket.connect();
                     if(bluetoothSocket.isConnected()){
-                        Timer timer = new Timer();
-                        timer.scheduleAtFixedRate(new TimerTask() {
-                            @Override
-                            public void run() {
-                                try {
-                                    InputStream inputStream = bluetoothSocket.getInputStream();
-                                    OutputStream outputStream = bluetoothSocket.getOutputStream();
-
-                                    Message msn = new Message();
-                                    msn.obj = inputStream;
-                                    msn.what = 1;
-                                    handler.sendMessage(msn);
-                                    Log.e ("Darkcode","Se recibe");
-                                }catch (Exception e){
-                                    Log.e("ERROR",e.getMessage());
-                                    try {
-                                        bluetoothSocket.close();
-                                    } catch (IOException e1) {
-                                        Log.e("ERROR",e.getMessage());
-                                    }
-                                }
-                            }
-                        },0,60000);
-
+                        handler.obtainMessage(Constants.MESSAGE_CONNECTED,bluetoothSocket).sendToTarget();
                     }else{
+                        handler.obtainMessage(Constants.MESSAGE_CONNECTED,false).sendToTarget();
                         bluetoothSocket.close();
                     }
                 } catch (Exception e){

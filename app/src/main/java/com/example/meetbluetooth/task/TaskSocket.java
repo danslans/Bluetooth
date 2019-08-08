@@ -22,34 +22,49 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.UUID;
 
-public class TaskSocket {
+public class TaskSocket extends Thread {
 
     BluetoothAdapter bluetoothAdapter;
-    Context context;
-    int dato = 0;
+    Handler handler;
+    boolean isConected = false;
+    InputStream inputStream;
+    OutputStream outputStream;
+    BluetoothSocket bluetoothSocket;
 
-    public TaskSocket(BluetoothAdapter bluetoothAdapter, Context context) {
+    public TaskSocket(BluetoothAdapter bluetoothAdapter, Handler handler) {
         this.bluetoothAdapter = bluetoothAdapter;
-        this.context = context;
-    }
-
-    public void run() {
+        this.handler = handler;
         try {
             BluetoothServerSocket bluetoothServerSocket = bluetoothAdapter.listenUsingRfcommWithServiceRecord(Constants.NAME, UUID.fromString(Constants.UUID));
-            final BluetoothSocket bluetoothSocket = bluetoothServerSocket.accept();
+            bluetoothSocket = bluetoothServerSocket.accept();
             if(bluetoothSocket.isConnected()){
-                new Timer().scheduleAtFixedRate(new TimerTask() {
-                    @Override
-                    public void run() {
-                        try {
-                            InputStream inputStream = bluetoothSocket.getInputStream();
-                            OutputStream outputStream = bluetoothSocket.getOutputStream();
-                            String saludo = "hola"+dato;
-                            dato++;
-                            outputStream.write(saludo.getBytes());
-                            outputStream.flush();
-                            Log.d("INFORMACION","Conectado");
+                inputStream = bluetoothSocket.getInputStream();
+                outputStream = bluetoothSocket.getOutputStream();
+                isConected = true;
+            }else {
+                try {
+                    bluetoothSocket.close();
+                } catch (IOException e) {
+                    Log.d("Error cerrando conexion",e.getMessage());
+                }
+            }
+        }catch (Exception e){
+            Log.d("Error conectando",e.getMessage());
+        }
 
+    }
+
+    @Override
+    public void run() {
+                        try {
+                             byte[] datos = new byte[1024];
+                             int datosLeidos ;
+                             while (isConected){
+                                  datosLeidos = inputStream.read(datos);
+                                 handler.obtainMessage(Constants.MESSAGE_READ, datosLeidos, -1, datos)
+                                         .sendToTarget();
+                             }
+                            Log.d("INFORMACION","Conectado");
                         }catch (Exception e){
                             Log.d("Error-Task",e.getMessage());
                             try {
@@ -58,14 +73,16 @@ public class TaskSocket {
                                 Log.d("Error-Task",e.getMessage());
                             }
                         }
-                    }
-                },0,60000);
-            }else {
-                bluetoothSocket.close();
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
 
     }
+
+        public void write(byte [] bytes) {
+            try {
+                outputStream.write(bytes);
+                outputStream.flush();
+            } catch (IOException e) {
+                Log.d("Error-Writing",e.getMessage());
+            }
+    }
+
 }

@@ -3,6 +3,7 @@ package com.example.meetbluetooth;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothServerSocket;
+import android.bluetooth.BluetoothSocket;
 import android.content.Intent;
 import android.os.Bundle;
 
@@ -29,8 +30,11 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 
+import java.io.ByteArrayInputStream;
+import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Set;
 
@@ -39,10 +43,15 @@ public class MainActivity extends AppCompatActivity {
     RecyclerView lista,chatlist;
     DeviceAdapter deviceAdapter;
     BluetoothAdapter bluetoothAdapter;
+    ChatAdapter chatAdapter;
     EditText editText;
     Button enviar;
     ArrayList<String> msnChat =new ArrayList<>();
     Handler handler;
+    StringBuffer stringBuffer = new StringBuffer();
+    TaskSocket taskSocket;
+    boolean isServer = false;
+    ThreadDevice threadDevice;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,7 +76,11 @@ public class MainActivity extends AppCompatActivity {
         enviar.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-
+                if(isServer) {
+                    handler.obtainMessage(Constants.MESSAGE_WRITE, editText.getText().toString().getBytes()).sendToTarget();
+                }else{
+                    handler.obtainMessage(Constants.MESSAGE_WRITE_CLIENT, editText.getText().toString().getBytes()).sendToTarget();
+                }
             }
         });
 
@@ -76,24 +89,36 @@ public class MainActivity extends AppCompatActivity {
             public void handleMessage(@NonNull Message msg) {
                 super.handleMessage(msg);
                 switch (msg.what){
-                    case 1:
+                    case Constants.MESSAGE_READ:
                         try {
-                            int i;
-                            char c;
-                            StringBuilder stringBuilder = new StringBuilder();
-                            InputStream inputStream =(InputStream) msg.obj;
-                            while((i = inputStream.read())!=-1) {
-                                c = (char) i;
-                                stringBuilder.append(c);
-                                msnChat.add(stringBuilder.toString());
-                                deviceAdapter.notifyDataSetChanged();
-                                Log.e ("Resultado",stringBuilder.toString());
-                            }
-                            Log.e ("Resultado",stringBuilder.toString());
+                            byte[] bytes =(byte[]) msg.obj;
+                            String data = new String(bytes) ;
+                            msnChat.add(data);
+                            chatAdapter.notifyDataSetChanged();
                         } catch (Exception e){
                             Log.e ("Error Handler",e.getMessage());
                         }
 
+                        break;
+                    case  Constants.MESSAGE_WRITE:
+                        byte[] bytes =(byte[]) msg.obj;
+                        msnChat.add("yo: "+new String(bytes));
+                        chatAdapter.notifyDataSetChanged();
+                        taskSocket.write(bytes);
+                        break;
+                    case  Constants.MESSAGE_WRITE_CLIENT:
+                        try {
+                            byte[] datos =(byte[]) msg.obj;
+                            msnChat.add("yo: "+new String(datos));
+                            chatAdapter.notifyDataSetChanged();
+                            threadDevice.write(datos);
+                        }catch (Exception e){
+                            Log.e ("Error Handler",e.getMessage());
+                        }
+                        break;
+                    case  Constants.MESSAGE_CONNECTED:
+                        threadDevice = new ThreadDevice((BluetoothSocket) msg.obj);
+                        threadDevice.start();
                         break;
                 }
             }
@@ -108,7 +133,7 @@ public class MainActivity extends AppCompatActivity {
         deviceAdapter = new DeviceAdapter(getApplicationContext(),bluetoothDeviceArrayList,handler);
         lista.setAdapter(deviceAdapter);
         msnChat.add("texto prueba");
-        ChatAdapter chatAdapter = new ChatAdapter(msnChat);
+        chatAdapter = new ChatAdapter(msnChat);
         chatlist.setAdapter(chatAdapter);
 
 
@@ -138,8 +163,9 @@ public class MainActivity extends AppCompatActivity {
 
         //noinspection SimplifiableIfStatement
         if (id == R.id.action_settings) {
-            TaskSocket taskSocket = new TaskSocket(bluetoothAdapter,getApplicationContext());
-            taskSocket.run();
+            taskSocket = new TaskSocket(bluetoothAdapter,handler);
+            taskSocket.start();
+            isServer = true;
             return true;
         }
 
@@ -149,5 +175,74 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onStop() {
         super.onStop();
+    }
+
+ /*   public static void main(String... arg){
+        try {
+            InputStream inputStream = new ByteArrayInputStream("hola1".getBytes());
+            StringBuilder stringBuilder = new StringBuilder();
+            int i;
+            while ((i = inputStream.read())>0){
+                char letra = (char) i;
+                stringBuilder.append(letra);
+            }
+            System.out.println(stringBuilder.toString());
+        }catch (Exception e){
+            System.out.println(e);
+        }
+
+    }*/
+
+
+    private class ThreadDevice extends Thread {
+        private final BluetoothSocket bluetoothSocket;
+        private final InputStream inputStream ;
+        private final OutputStream outputStream ;
+        int mState;
+        private ThreadDevice(BluetoothSocket bluetoothSocket) {
+            this.bluetoothSocket = bluetoothSocket;
+            InputStream inStream=null;
+            OutputStream oStream =null;
+
+            try {
+                inStream = bluetoothSocket.getInputStream();
+                oStream = bluetoothSocket.getOutputStream();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            inputStream = inStream;
+            outputStream = oStream;
+            mState = 1;
+        }
+
+        @Override
+        public void run() {
+            byte[] buffer = new byte[1024];
+            int bytes;
+
+            // Keep listening to the InputStream while connected
+            while (mState == 1) {
+                try {
+                    bytes = inputStream.read(buffer);
+                    handler.obtainMessage(Constants.MESSAGE_READ, bytes, -1, buffer)
+                            .sendToTarget();
+                } catch (IOException e) {
+                    System.out.println(e);
+                    break;
+                }
+            }
+        }
+
+        public void write(byte[] buffer) {
+            try {
+                outputStream.write(buffer);
+
+                // Share the sent message back to the UI Activity
+                //handler.obtainMessage(Constants.MESSAGE_WRITE, -1, -1, buffer)
+                //        .sendToTarget();
+            } catch (IOException e) {
+                System.out.println(e);
+            }
+        }
     }
 }
